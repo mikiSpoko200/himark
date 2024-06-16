@@ -10,6 +10,11 @@ Quality of life features that extend the range of items compatible with `#[mark]
 - Tests which can serve as reference point for users.
 - Support `#[himark::mark]` for `enum` and `union` items.
 - Support for generic parameters.
+- Better module level docs.
+- CHANGELOG.md
+
+### Changed
+- README.md has been updated.
  
 ## [0.1.0] - 2024-06-15
   
