@@ -73,8 +73,9 @@
 
 extern crate proc_macro;
 
-use proc_macro::TokenStream;
+use proc_macro::{Punct, TokenStream};
 use quote::{quote, quote_spanned};
+use quote::TokenStreamExt;
 use syn::{parse_macro_input, ItemTrait};
 
 #[proc_macro_attribute]
@@ -103,11 +104,69 @@ pub fn marker(_: TokenStream, input: TokenStream) -> TokenStream {
     gen.into()
 }
 
+struct Sealed {
+    visibility: Option<syn::MetaList>,
+}
+
+// TODO: Parse Sealed path -- look into crate's source code.
+
+impl quote::ToTokens for Sealed {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let path = quote! { ::sealed::sealed };
+        
+        let inner = self.visibility
+            .as_ref()
+            .map(|vis| quote! { pub(#vis) })
+            .unwrap_or(proc_macro2::TokenStream::new());
+
+        tokens.append_all(quote! { #[#path #inner] });
+    }
+}
+
+#[derive(Default)]
+struct Qualifiers {
+    sealed: Option<Sealed>,
+}
+
+impl Qualifiers {
+    pub fn sealed(&self) -> &Option<Sealed> {
+        &self.sealed
+    }
+}
+
+impl<'a> FromIterator<&'a syn::Attribute> for Qualifiers {
+    fn from_iter<T: IntoIterator<Item = &'a syn::Attribute>>(iter: T) -> Self {
+        let non_generic = iter.into_iter();
+
+        fn inner_non_generic<'a>(attrs: impl Iterator<Item=&'a syn::Attribute>) -> Qualifiers {
+            let mut default = Qualifiers::default();
+
+            for attr in attrs {
+                match &attr.meta {
+                    syn::Meta::List(list) if list.path.is_ident("classifier") => {
+                        list.parse_nested_meta(|classifier|{
+                            if classifier.path.is_ident("sealed") {
+                                default.is_sealed = true;
+                            }
+                            Ok(())
+                        });
+                    }
+                    _ => continue,
+                };
+            }
+            default
+        }
+
+        inner_non_generic(non_generic)
+    }
+}
+
 #[proc_macro_attribute]
 /// Attribute for marking types with marker traits.
 pub fn mark(args: TokenStream, input: TokenStream) -> TokenStream {
     let parsed_input = parse_macro_input!(input as syn::DeriveInput);
 
+    let qualifiers = Qualifiers::from_iter(&parsed_input.attrs);
     let mut trait_names = Vec::new();
 
     // Parser to collect the trait names from the attribute arguments
@@ -134,6 +193,48 @@ pub fn mark(args: TokenStream, input: TokenStream) -> TokenStream {
 
     let mut gen = quote::quote! { #parsed_input };
     gen.extend(impls);
+
+    gen.into()
+}
+
+pub fn markn(args: TokenStream, input: TokenStream) -> TokenStream {
+    let parsed_input = parse_macro_input!(input as DeriveInput);
+
+    let mut trait_names = Vec::new();
+
+    // Parser to collect the trait names from the attribute arguments
+    let parser = syn::meta::parser(|meta| match meta {
+        Meta::Path(path) => {
+            trait_names.push(path);
+            Ok(())
+        }
+        _ => Err(meta.error("expected trait name")),
+    });
+
+    parse_macro_input!(args with parser);
+
+    let ident = &parsed_input.ident;
+    let span = parsed_input.ident.span();
+    let generics = &parsed_input.generics;
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
+    let impls = trait_names.iter().map(|trait_name| {
+        quote_spanned! {span=>
+            impl #impl_generics #trait_name for #ident #ty_generics #where_clause {}
+        }
+    });
+
+    let mut gen = quote::quote! { #parsed_input };
+    gen.extend(impls);
+
+    // Check for sealed attribute
+    let is_sealed = parsed_input.attrs.iter().any(is_sealed_attribute);
+
+    if is_sealed {
+        gen.extend(quote_spanned! {span=>
+            impl #impl_generics sealed::Sealed for #ident #ty_generics #where_clause {}
+        });
+    }
 
     gen.into()
 }

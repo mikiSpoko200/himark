@@ -3,12 +3,15 @@ use std::marker::PhantomData;
 use himark as hi;
 
 #[hi::marker]
+#[allow(unused)]
 trait Array {}
 
 #[hi::marker]
+#[allow(unused)]
 trait Uniform {}
 
 #[hi::marker]
+#[allow(unused)]
 trait V {}
 
 #[hi::mark(Array, Uniform, V)]
