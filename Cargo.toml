@@ -1,3 +1,4 @@
+workspace = { members = ["himark-test"] }
 [package]
 name = "himark"
 description = "For those who crave more ergonomic marker traits"
@@ -14,9 +15,16 @@ include = [
     "Cargo.toml",
 ]
 
-[lib]
-proc-macro = true
+[[test]]
+path = "himark-test/lib.rs"
+name = "integration"
+
+[features]
+default = ["attrs"]
+
+attrs = ["dep:himark-proc"]
 
 [dependencies]
 quote = "1.0.36"
 syn = { version = "2.0.66", features = ["full"] }
+himark-proc = { path = "./himark-proc", optional = true }
